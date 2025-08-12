@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Modal from './components/Modal'
 import Sidebar from './components/Sidebar'
+import SignUp from './components/SignUp'
+import ForgotPassword from './components/ForgotPassword'
+import ResetPassword from './components/ResetPassword'
+import { supabase } from './lib/supabase'
+import type { User } from '@supabase/supabase-js'
 
 
 type Project = {
@@ -27,6 +32,14 @@ export default function LightTimerApp() {
   const tickRef = useRef<number | null>(null)
   const touchStartRef = useRef<number | null>(null)
 
+  // Authentication state
+  const [user, setUser] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authError, setAuthError] = useState<string>('')
+  const [authSuccess, setAuthSuccess] = useState<string>('')
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
+  const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgot' | 'reset'>('signin')
+
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
       // trigger re-render while running to update timers
@@ -40,6 +53,29 @@ export default function LightTimerApp() {
       }
     }
   }, [])
+
+  // Authentication effect
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setAuthLoading(false)
+    })
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null)
+      
+      // Handle password recovery event
+      if (event === 'PASSWORD_RECOVERY') {
+        setAuthView('reset')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+
 
   function startTimer(id: number) {
     const now = Date.now()
@@ -61,8 +97,8 @@ export default function LightTimerApp() {
     )
   }
 
-  function addProject(name: string, notes: string) {
-    const newProject = { id: Date.now(), name, notes, total: 0, running: false }
+  function addProject(name: string, notes: string, rate?: number) {
+    const newProject = { id: Date.now(), name, notes, total: 0, running: false, rate: rate || undefined }
     setProjects((prev) => [...prev, newProject])
     setCurrentIndex(projects.length)
     setModal(null)
@@ -73,6 +109,16 @@ export default function LightTimerApp() {
     const projectIndex = projects.findIndex((p) => p.id === selectedProjectId)
 
     setProjects((prev) => prev.filter((p) => p.id !== selectedProjectId))
+    
+    // Adjust currentIndex to ensure it points to a valid project
+    setCurrentIndex((prevIndex) => {
+      const newLength = projects.length - 1
+      if (newLength === 0) return 0
+      if (prevIndex >= newLength) return newLength - 1
+      if (prevIndex > projectIndex) return prevIndex - 1
+      return prevIndex
+    })
+    
     setModal(null)
     setSelectedProjectId(null)
   }
@@ -84,6 +130,44 @@ export default function LightTimerApp() {
     )
     setModal(null)
     setSelectedProjectId(null)
+  }
+
+  // Authentication functions
+  async function handleSignIn(email: string, password: string) {
+    setAuthError('')
+    setAuthSuccess('')
+    setIsAuthSubmitting(true)
+    
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) {
+        // Provide more user-friendly error messages
+        if (error.message.includes('Invalid login credentials')) {
+          setAuthError('Invalid login credentials.')
+        } else if (error.message.includes('Email not confirmed')) {
+          setAuthError('Please check your email and click the confirmation link before signing in.')
+        } else {
+          setAuthError(error.message)
+        }
+      } else {
+        setAuthSuccess('Signed in successfully!')
+        setAuthView('signin')
+      }
+    } catch (err) {
+      setAuthError('An unexpected error occurred. Please try again.')
+    } finally {
+      setIsAuthSubmitting(false)
+    }
+  }
+
+  async function handleSignOut() {
+    setAuthError('')
+    setAuthSuccess('')
+    setAuthView('signin')
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      setAuthError('Error signing out: ' + error.message)
+    }
   }
 
   function formatSeconds(totalSeconds: number) {
@@ -157,7 +241,8 @@ export default function LightTimerApp() {
     return acc + earnings
   }, 0)
 
-  const projectColors = ['bg-sky-50', 'bg-emerald-50', 'bg-amber-50', 'bg-fuchsia-50', 'bg-rose-50', 'bg-indigo-50'];
+  const projectColors = ['bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-fuchsia-500', 'bg-rose-500', 'bg-indigo-500'];
+  const cardColors = ['bg-sky-50', 'bg-emerald-50', 'bg-amber-50', 'bg-fuchsia-50', 'bg-rose-50', 'bg-indigo-50'];
 
   function handleSidebarProjectClick(projectId: number) {
     const projectIndex = projects.findIndex((p) => p.id === projectId);
@@ -168,241 +253,378 @@ export default function LightTimerApp() {
 
   return (
     <div className="h-screen bg-gray-50 text-gray-900 font-sans flex">
-      <Sidebar 
-        projects={projects} 
-        projectColors={projectColors} 
-        onProjectClick={handleSidebarProjectClick}
-      />
-      <div className="flex-grow flex flex-col pl-16">
-        {/* Header */}
-        <header className="sticky top-0 bg-white border-b border-gray-200 z-20">
-          <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold">BillTick</h1>
-              <p className="text-sm text-gray-500">
-                Start a timer on projects, track hours, and bill with ease.
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-xs text-gray-600">Rate / hr</div>
-              <input
-                aria-label="Hourly rate"
-                type="number"
-                value={rate}
-                onChange={(e) => setRate(Number(e.target.value) || 0)}
-                className="w-20 p-2 rounded-md border border-gray-200 bg-gray-50 text-sm"
-              />
-              <button
-                onClick={() => setModal('addProject')}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-              >
-                + New
-              </button>
-            </div>
-          </div>
-        </header>
+      {authLoading ? (
+        <div className="w-full flex items-center justify-center">
+          <div className="text-lg">Loading...</div>
+        </div>
+      ) : !user || authView === 'reset' ? (
+        <>
+          {authView === 'signin' && (
+            <div className="w-full flex items-center justify-center">
+              <div className="max-w-md w-full space-y-8">
+                <div>
+                  <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                    Sign in to BillTick
+                  </h2>
+                  <p className="mt-2 text-center text-sm text-gray-600">
+                    Welcome back! Please sign in to your account
+                  </p>
+                </div>
+                
+                {/* Error/Success Messages */}
+                {authError && (
+                  <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                    <div className="text-sm text-red-800">{authError}</div>
+                  </div>
+                )}
+                {authSuccess && (
+                  <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                    <div className="text-sm text-green-800">{authSuccess}</div>
+                  </div>
+                )}
 
-        {/* Main content */}
-        <main className="flex-grow flex flex-col items-center w-full px-4 py-6 gap-8">
-          {/* Overview card */}
-          <section className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100 w-full max-w-4xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm text-gray-500">Total tracked</div>
-                <div className="text-2xl font-medium">{formatSeconds(totalSeconds)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm text-gray-500">Estimated earnings</div>
-                <div className="text-xl font-semibold">${totalEarnings.toFixed(2)}</div>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-gray-500">
-              Tip: Tap a project to start a timer. Tap again to stop. Use desktop keyboard shortcuts later (coming soon).
-            </div>
-          </section>
-
-          {/* Projects carousel */}
-          <section className="relative w-full max-w-sm mx-auto flex items-center justify-center flex-grow pb-8">
-            {projects.length > 1 && (
-              <button
-                onClick={prevProject}
-                className="absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-16 bg-white/50 hover:bg-white rounded-full p-3 shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 z-10"
-                aria-label="Previous project"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6 text-gray-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-            )}
-
-            <div
-              className="overflow-hidden relative h-full w-full"
-              onTouchStart={handleTouchStart}
-              onTouchMove={handleTouchMove}
-            >
-              {projects.map((p, i) => (
-                <article
-                  key={p.id}
-                  className={`absolute top-0 left-0 w-full h-full rounded-2xl p-6 border border-gray-200 shadow-xl transition-all duration-500 ease-in-out flex flex-col ${
-                    projectColors[i % projectColors.length]
-                  }`}
-                  style={{
-                    transform: `translateX(${(i - currentIndex) * 110}%) scale(${
-                      i === currentIndex ? 1 : 0.9
-                    })`,
-                    opacity: i === currentIndex ? 1 : 0.4,
-                    zIndex: i === currentIndex ? 10 : 1,
-                    transitionProperty: 'transform, opacity',
-                  }}
-                  role="group"
-                >
-                  {/* Header */}
-                  <header className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-800">{p.name}</h3>
-                      <p className="text-sm text-gray-500 mt-1">{p.notes}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedProjectId(p.id)
-                          setModal('setRate')
-                        }}
-                        className="p-2 rounded-full text-gray-400 hover:bg-black/10 hover:text-gray-600 transition-colors"
-                        aria-label="Set project rate"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1.5}
-                          stroke="currentColor"
-                          className="w-5 h-5"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 01 0 7H6"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedProjectId(p.id)
-                          setModal('deleteProject')
-                        }}
-                        className="p-2 rounded-full text-gray-400 hover:bg-black/10 hover:text-gray-600 transition-colors"
-                        aria-label="Delete project"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth={1.5}
-                          stroke="currentColor"
-                          className="w-5 h-5"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </header>
-
-                  {/* Body */}
-                  <div
-                    className="my-auto text-center flex flex-col justify-center items-center cursor-pointer"
-                    onClick={() => (p.running ? stopTimer(p.id) : startTimer(p.id))}
-                  >
-                    <div className="text-5xl font-mono tracking-tighter text-gray-800">
-                      {formatSeconds(projectCurrentElapsed(p))}
-                    </div>
-                    <div className="text-lg font-semibold text-gray-600">
-                      ${((projectCurrentElapsed(p) / 3600) * (p.rate ?? rate)).toFixed(2)}
-                    </div>
+                <form className="mt-8 space-y-6" onSubmit={(e) => e.preventDefault()}>
+                  <div className="rounded-md shadow-sm -space-y-px">
+                    <input
+                      type="email"
+                      required
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Email address"
+                      id="email"
+                      disabled={isAuthSubmitting}
+                      onChange={() => {
+                        if (authError || authSuccess) {
+                          setAuthError('')
+                          setAuthSuccess('')
+                        }
+                      }}
+                    />
+                    <input
+                      type="password"
+                      required
+                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                      placeholder="Password"
+                      id="password"
+                      disabled={isAuthSubmitting}
+                      onChange={() => {
+                        if (authError || authSuccess) {
+                          setAuthError('')
+                          setAuthSuccess('')
+                        }
+                      }}
+                    />
                   </div>
 
-                  {/* Footer */}
-                  <footer className="mt-auto">
-                    {p.running ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          stopTimer(p.id)
-                        }}
-                        className="w-full py-3 rounded-lg bg-red-500 text-white text-lg font-semibold shadow-lg hover:bg-red-600 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400"
-                        aria-pressed={p.running}
-                      >
-                        Stop
-                      </button>
-                    ) : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          startTimer(p.id)
-                        }}
-                        className="w-full py-3 rounded-lg bg-green-600 text-white text-lg font-semibold shadow-lg hover:bg-green-700 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
-                      >
-                        Start
-                      </button>
-                    )}
-                  </footer>
-                </article>
-              ))}
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setAuthView('forgot')}
+                      className="text-sm text-indigo-600 hover:text-indigo-500"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
+
+                  <div className="flex space-x-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const email = (document.getElementById('email') as HTMLInputElement).value
+                        const password = (document.getElementById('password') as HTMLInputElement).value
+                        if (!email || !password) {
+                          setAuthError('Please enter both email and password')
+                          return
+                        }
+                        handleSignIn(email, password)
+                      }}
+                      disabled={isAuthSubmitting}
+                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isAuthSubmitting ? 'Signing in...' : 'Sign in'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthView('signup')}
+                      disabled={isAuthSubmitting}
+                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Sign up
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
+          )}
+          
+          {authView === 'signup' && (
+            <SignUp 
+              onBack={() => setAuthView('signin')}
+              onSuccess={() => setAuthView('signin')}
+            />
+          )}
+          
+          {authView === 'forgot' && (
+            <ForgotPassword 
+              onBack={() => setAuthView('signin')}
+            />
+          )}
+          
+          {authView === 'reset' && (
+            <ResetPassword 
+              onSuccess={() => {
+                setAuthView('signin')
+                // Sign out the user after successful password reset
+                supabase.auth.signOut()
+              }}
+            />
+          )}
+        </>
+      ) : (
+        <>
+          <Sidebar 
+            projects={projects} 
+            projectColors={projectColors} 
+            onProjectClick={handleSidebarProjectClick}
+            user={user}
+          />
+          <div className="flex-grow flex flex-col pl-16">
+            {/* Header */}
+            <header className="sticky top-0 bg-white border-b border-gray-200 z-20">
+              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+                <div>
+                  <h1 className="text-xl font-semibold">BillTick</h1>
+                  <p className="text-sm text-gray-500">
+                    Start a timer on projects, track hours, and bill with ease.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="text-xs text-gray-600">Rate / hr</div>
+                  <input
+                    aria-label="Hourly rate"
+                    type="number"
+                    value={rate}
+                    onChange={(e) => setRate(Number(e.target.value) || 0)}
+                    className="w-20 p-2 rounded-md border border-gray-200 bg-gray-50 text-sm"
+                  />
+                  <button
+                    onClick={() => setModal('addProject')}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  >
+                    + New
+                  </button>
+                  <button
+                    onClick={handleSignOut}
+                    className="px-3 py-2 bg-gray-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </header>
 
-            {projects.length > 1 && (
-              <button
-                onClick={nextProject}
-                className="absolute top-1/2 right-0 transform -translate-y-1/2 translate-x-16 bg-white/50 hover:bg-white rounded-full p-3 shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 z-10"
-                aria-label="Next project"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-6 w-6 text-gray-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+            {/* Main content */}
+            <main className="flex-grow flex flex-col items-center w-full px-4 py-6 gap-8">
+              {/* Overview card */}
+              <section className="rounded-2xl bg-white p-4 shadow-sm border border-gray-100 w-full max-w-4xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm text-gray-500">Total tracked</div>
+                    <div className="text-2xl font-medium">{formatSeconds(totalSeconds)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">Estimated earnings</div>
+                    <div className="text-xl font-semibold">${totalEarnings.toFixed(2)}</div>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-500">
+                  Tip: Tap a project to start a timer. Tap again to stop. Use desktop keyboard shortcuts later (coming soon).
+                </div>
+              </section>
+
+              {/* Projects carousel */}
+              <section className="relative w-full max-w-sm mx-auto flex items-center justify-center flex-grow pb-8">
+                {projects.length > 1 && (
+                  <button
+                    onClick={prevProject}
+                    className="absolute top-1/2 left-0 transform -translate-y-1/2 -translate-x-16 bg-white/50 hover:bg-white rounded-full p-3 shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 z-10"
+                    aria-label="Previous project"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-gray-600"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                )}
+
+                <div
+                  className="overflow-hidden relative h-full w-full"
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            )}
-          </section>
-        </main>
-      </div>
+                  {projects.map((p, i) => (
+                    <article
+                      key={p.id}
+                      className={`absolute top-0 left-0 w-full h-full rounded-2xl p-6 border border-gray-200 shadow-xl transition-all duration-500 ease-in-out flex flex-col ${
+                        cardColors[i % cardColors.length]
+                      }`}
+                      style={{
+                        transform: `translateX(${(i - currentIndex) * 110}%) scale(${
+                          i === currentIndex ? 1 : 0.9
+                        })`,
+                        opacity: i === currentIndex ? 1 : 0.4,
+                        zIndex: i === currentIndex ? 10 : 1,
+                        transitionProperty: 'transform, opacity',
+                      }}
+                      role="group"
+                    >
+                      {/* Header */}
+                      <header className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-800">{p.name}</h3>
+                          <p className="text-sm text-gray-500 mt-1">{p.notes}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedProjectId(p.id)
+                              setModal('setRate')
+                            }}
+                            className="p-2 rounded-full text-gray-400 hover:bg-black/10 hover:text-gray-600 transition-colors"
+                            aria-label="Set project rate"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth={1.5}
+                              stroke="currentColor"
+                              className="w-5 h-5"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 01 0 7H6"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedProjectId(p.id)
+                              setModal('deleteProject')
+                            }}
+                            className="p-2 rounded-full text-gray-400 hover:bg-black/10 hover:text-gray-600 transition-colors"
+                            aria-label="Delete project"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              strokeWidth={1.5}
+                              stroke="currentColor"
+                              className="w-5 h-5"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      </header>
 
-      {/* Modals */}
-      <AddProjectModal
-        isOpen={modal === 'addProject'}
-        onClose={() => setModal(null)}
-        onAdd={addProject}
-      />
-      <DeleteProjectModal
-        isOpen={modal === 'deleteProject'}
-        onClose={() => setModal(null)}
-        onDelete={deleteProject}
-        projectName={projects.find((p) => p.id === selectedProjectId)?.name || ''}
-      />
-      <SetRateModal
-        isOpen={modal === 'setRate'}
-        onClose={() => setModal(null)}
-        onSetRate={setProjectRate}
-        currentRate={
-          projects.find((p) => p.id === selectedProjectId)?.rate ?? rate
-        }
-      />
+                      {/* Body */}
+                      <div
+                        className="my-auto text-center flex flex-col justify-center items-center cursor-pointer"
+                        onClick={() => (p.running ? stopTimer(p.id) : startTimer(p.id))}
+                      >
+                        <div className="text-5xl font-mono tracking-tighter text-gray-800">
+                          {formatSeconds(projectCurrentElapsed(p))}
+                        </div>
+                        <div className="text-lg font-semibold text-gray-600">
+                          ${((projectCurrentElapsed(p) / 3600) * (p.rate ?? rate)).toFixed(2)}
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <footer className="mt-auto">
+                        {p.running ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              stopTimer(p.id)
+                            }}
+                            className="w-full py-3 rounded-lg bg-red-500 text-white text-lg font-semibold shadow-lg hover:bg-red-600 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-400"
+                            aria-pressed={p.running}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              startTimer(p.id)
+                            }}
+                            className="w-full py-3 rounded-lg bg-green-600 text-white text-lg font-semibold shadow-lg hover:bg-green-700 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400"
+                          >
+                            Start
+                          </button>
+                        )}
+                      </footer>
+                    </article>
+                  ))}
+                </div>
+
+                {projects.length > 1 && (
+                  <button
+                    onClick={nextProject}
+                    className="absolute top-1/2 right-0 transform -translate-y-1/2 translate-x-16 bg-white/50 hover:bg-white rounded-full p-3 shadow-lg transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 z-10"
+                    aria-label="Next project"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-6 w-6 text-gray-600"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                )}
+              </section>
+            </main>
+          </div>
+
+          {/* Modals */}
+          <AddProjectModal
+            isOpen={modal === 'addProject'}
+            onClose={() => setModal(null)}
+            onAdd={addProject}
+          />
+          <DeleteProjectModal
+            isOpen={modal === 'deleteProject'}
+            onClose={() => setModal(null)}
+            onDelete={deleteProject}
+            projectName={projects.find((p) => p.id === selectedProjectId)?.name || ''}
+          />
+          <SetRateModal
+            isOpen={modal === 'setRate'}
+            onClose={() => setModal(null)}
+            onSetRate={setProjectRate}
+            currentRate={
+              projects.find((p) => p.id === selectedProjectId)?.rate ?? rate
+            }
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -414,17 +636,19 @@ function AddProjectModal({
 }: {
   isOpen: boolean
   onClose: () => void
-  onAdd: (name: string, notes: string) => void
+  onAdd: (name: string, notes: string, rate?: number) => void
 }) {
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [rate, setRate] = useState<number | undefined>(undefined)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!name.trim()) return
-    onAdd(name, notes)
+    onAdd(name, notes, rate)
     setName('')
     setNotes('')
+    setRate(undefined)
   }
 
   return (
@@ -455,6 +679,21 @@ function AddProjectModal({
             onChange={(e) => setNotes(e.target.value)}
             className="w-full p-2 rounded-md border border-gray-300 focus:ring-2 focus:ring-blue-300"
             placeholder="e.g., Client, specific tasks"
+          />
+        </div>
+        <div>
+          <label htmlFor="projectRate" className="text-sm font-medium text-gray-700 block mb-1">
+            Hourly Rate ($)
+          </label>
+          <input
+            type="number"
+            id="projectRate"
+            value={rate || ''}
+            onChange={(e) => setRate(Number(e.target.value) || undefined)}
+            className="w-full p-2 rounded-md border border-gray-300 focus:ring-2 focus:ring-blue-300"
+            placeholder="e.g., 25"
+            min="0"
+            step="0.01"
           />
         </div>
         <div className="flex justify-end gap-3 mt-2">
