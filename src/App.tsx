@@ -39,6 +39,7 @@ export default function LightTimerApp() {
   const [authSuccess, setAuthSuccess] = useState<string>('')
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
   const [authView, setAuthView] = useState<'signin' | 'signup' | 'forgot' | 'reset'>('signin')
+  const [showAuthModal, setShowAuthModal] = useState(false)
 
   useEffect(() => {
     tickRef.current = window.setInterval(() => {
@@ -69,6 +70,7 @@ export default function LightTimerApp() {
       // Handle password recovery event
       if (event === 'PASSWORD_RECOVERY') {
         setAuthView('reset')
+        setShowAuthModal(true)
       }
     })
 
@@ -152,6 +154,7 @@ export default function LightTimerApp() {
       } else {
         setAuthSuccess('Signed in successfully!')
         setAuthView('signin')
+        setShowAuthModal(false)
       }
     } catch (err) {
       setAuthError('An unexpected error occurred. Please try again.')
@@ -257,128 +260,6 @@ export default function LightTimerApp() {
         <div className="w-full flex items-center justify-center">
           <div className="text-lg">Loading...</div>
         </div>
-      ) : !user || authView === 'reset' ? (
-        <>
-          {authView === 'signin' && (
-            <div className="w-full flex items-center justify-center">
-              <div className="max-w-md w-full space-y-8">
-                <div>
-                  <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-                    Sign in to BillTick
-                  </h2>
-                  <p className="mt-2 text-center text-sm text-gray-600">
-                    Welcome back! Please sign in to your account
-                  </p>
-                </div>
-                
-                {/* Error/Success Messages */}
-                {authError && (
-                  <div className="bg-red-50 border border-red-200 rounded-md p-4">
-                    <div className="text-sm text-red-800">{authError}</div>
-                  </div>
-                )}
-                {authSuccess && (
-                  <div className="bg-green-50 border border-green-200 rounded-md p-4">
-                    <div className="text-sm text-green-800">{authSuccess}</div>
-                  </div>
-                )}
-
-                <form className="mt-8 space-y-6" onSubmit={(e) => e.preventDefault()}>
-                  <div className="rounded-md shadow-sm -space-y-px">
-                    <input
-                      type="email"
-                      required
-                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                      placeholder="Email address"
-                      id="email"
-                      disabled={isAuthSubmitting}
-                      onChange={() => {
-                        if (authError || authSuccess) {
-                          setAuthError('')
-                          setAuthSuccess('')
-                        }
-                      }}
-                    />
-                    <input
-                      type="password"
-                      required
-                      className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                      placeholder="Password"
-                      id="password"
-                      disabled={isAuthSubmitting}
-                      onChange={() => {
-                        if (authError || authSuccess) {
-                          setAuthError('')
-                          setAuthSuccess('')
-                        }
-                      }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setAuthView('forgot')}
-                      className="text-sm text-indigo-600 hover:text-indigo-500"
-                    >
-                      Forgot your password?
-                    </button>
-                  </div>
-
-                  <div className="flex space-x-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const email = (document.getElementById('email') as HTMLInputElement).value
-                        const password = (document.getElementById('password') as HTMLInputElement).value
-                        if (!email || !password) {
-                          setAuthError('Please enter both email and password')
-                          return
-                        }
-                        handleSignIn(email, password)
-                      }}
-                      disabled={isAuthSubmitting}
-                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isAuthSubmitting ? 'Signing in...' : 'Sign in'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAuthView('signup')}
-                      disabled={isAuthSubmitting}
-                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Sign up
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-          
-          {authView === 'signup' && (
-            <SignUp 
-              onBack={() => setAuthView('signin')}
-              onSuccess={() => setAuthView('signin')}
-            />
-          )}
-          
-          {authView === 'forgot' && (
-            <ForgotPassword 
-              onBack={() => setAuthView('signin')}
-            />
-          )}
-          
-          {authView === 'reset' && (
-            <ResetPassword 
-              onSuccess={() => {
-                setAuthView('signin')
-                // Sign out the user after successful password reset
-                supabase.auth.signOut()
-              }}
-            />
-          )}
-        </>
       ) : (
         <>
           <Sidebar 
@@ -412,12 +293,21 @@ export default function LightTimerApp() {
                   >
                     + New
                   </button>
-                  <button
-                    onClick={handleSignOut}
-                    className="px-3 py-2 bg-gray-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
-                  >
-                    Sign Out
-                  </button>
+                  {user ? (
+                    <button
+                      onClick={handleSignOut}
+                      className="px-3 py-2 bg-gray-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-300"
+                    >
+                      Sign Out
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowAuthModal(true)}
+                      className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    >
+                      Sign In
+                    </button>
+                  )}
                 </div>
               </div>
             </header>
@@ -623,6 +513,142 @@ export default function LightTimerApp() {
               projects.find((p) => p.id === selectedProjectId)?.rate ?? rate
             }
           />
+
+          {/* Authentication Modal */}
+          {showAuthModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-lg p-8 max-w-md w-full mx-4">
+                {authView === 'signin' && (
+                  <div className="space-y-6">
+                    <div>
+                      <h2 className="text-2xl font-bold text-gray-900 text-center">
+                        Sign in to BillTick
+                      </h2>
+                      <p className="mt-2 text-center text-sm text-gray-600">
+                        Welcome back! Please sign in to your account
+                      </p>
+                    </div>
+                    
+                    {/* Error/Success Messages */}
+                    {authError && (
+                      <div className="bg-red-50 border border-red-200 rounded-md p-4">
+                        <div className="text-sm text-red-800">{authError}</div>
+                      </div>
+                    )}
+                    {authSuccess && (
+                      <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                        <div className="text-sm text-green-800">{authSuccess}</div>
+                      </div>
+                    )}
+
+                    <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
+                      <div className="space-y-4">
+                        <input
+                          type="email"
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="Email address"
+                          id="email"
+                          disabled={isAuthSubmitting}
+                          onChange={() => {
+                            if (authError || authSuccess) {
+                              setAuthError('')
+                              setAuthSuccess('')
+                            }
+                          }}
+                        />
+                        <input
+                          type="password"
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                          placeholder="Password"
+                          id="password"
+                          disabled={isAuthSubmitting}
+                          onChange={() => {
+                            if (authError || authSuccess) {
+                              setAuthError('')
+                              setAuthSuccess('')
+                            }
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setAuthView('forgot')}
+                          className="text-sm text-indigo-600 hover:text-indigo-500"
+                        >
+                          Forgot your password?
+                        </button>
+                      </div>
+
+                      <div className="flex space-x-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const email = (document.getElementById('email') as HTMLInputElement).value
+                            const password = (document.getElementById('password') as HTMLInputElement).value
+                            if (!email || !password) {
+                              setAuthError('Please enter both email and password')
+                              return
+                            }
+                            handleSignIn(email, password)
+                          }}
+                          disabled={isAuthSubmitting}
+                          className="flex-1 py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isAuthSubmitting ? 'Signing in...' : 'Sign in'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuthView('signup')}
+                          disabled={isAuthSubmitting}
+                          className="flex-1 py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Sign up
+                        </button>
+                      </div>
+                    </form>
+
+                    <button
+                      onClick={() => setShowAuthModal(false)}
+                      className="w-full py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                
+                {authView === 'signup' && (
+                  <SignUp 
+                    onBack={() => setAuthView('signin')}
+                    onSuccess={() => {
+                      setAuthView('signin')
+                      setShowAuthModal(false)
+                    }}
+                  />
+                )}
+                
+                {authView === 'forgot' && (
+                  <ForgotPassword 
+                    onBack={() => setAuthView('signin')}
+                  />
+                )}
+                
+                {authView === 'reset' && (
+                  <ResetPassword 
+                    onSuccess={() => {
+                      setAuthView('signin')
+                      setShowAuthModal(false)
+                      // Sign out the user after successful password reset
+                      supabase.auth.signOut()
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
