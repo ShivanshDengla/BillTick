@@ -29,6 +29,32 @@ type Project = {
 }
 
 export default function LightTimerApp() {
+  // Add print-specific CSS
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @media print {
+        body * {
+          visibility: hidden;
+        }
+        .print-only, .print-only * {
+          visibility: visible !important;
+        }
+        .print-only {
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: 100%;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   const [projects, setProjects] = useState<Project[]>([
     { id: 1, name: 'Website Redesign', notes: 'Company Name', total: 0, running: false, sessions: [] },
     { id: 2, name: 'Logo Suite', notes: 'Brand pack', total: 0, running: false, sessions: [] },
@@ -351,12 +377,24 @@ export default function LightTimerApp() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (modal) return
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault()
-        prevProject()
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault()
-        nextProject()
+      
+      // Check if user is currently typing in an input field
+      const activeElement = document.activeElement
+      const isTyping = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        (activeElement as HTMLElement).contentEditable === 'true'
+      )
+      
+      // Only allow arrow key navigation when not typing
+      if (!isTyping) {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault()
+          prevProject()
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault()
+          nextProject()
+        }
       }
     }
 
@@ -1294,7 +1332,57 @@ function InvoiceModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create Invoice" maxWidthClass="max-w-4xl">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Print-only invoice - hidden on screen, shown when printing */}
+      <div className="hidden print:block print-only">
+        <div className="bg-white p-8">
+          <div className="w-full text-gray-900">
+            <div className="flex justify-end">
+              <h2 className="text-4xl tracking-widest">INVOICE</h2>
+            </div>
+            <div className="mt-10 text-sm">
+              <div className="space-y-4">
+                <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">BILLED TO:</div><div className="flex-1">{billedTo}</div></div>
+                <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">PAY TO:</div><div className="flex-1">{payTo}</div></div>
+                <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">DATE:</div><div className="flex-1">{new Date(date).toLocaleDateString()}</div></div>
+                <div className="flex items-start"><div className="font-semibold tracking-widest text-gray-600 w-24">PAY USING:</div><div className="flex-1"><div>{payUsing}</div>{payInfo && <div className="text-gray-500 mt-1">• {payInfo}</div>}</div></div>
+              </div>
+            </div>
+
+            <div className="mt-10">
+              <div className="grid grid-cols-[1fr_120px_140px] gap-x-8 text-sm font-semibold tracking-widest text-gray-600">
+                <div>DESCRIPTION</div>
+                <div>HOURS</div>
+                <div>AMOUNT</div>
+              </div>
+              <div className="mt-2 divide-y">
+                {selectedSessions.map((s) => {
+                  const hours = getHoursFor(s.id, s.durationSeconds)
+                  const amount = hours * rate
+                  const desc = (notesEdits[s.id] ?? s.notes) || 'Item'
+                  return (
+                    <div key={s.id} className="grid grid-cols-[1fr_120px_140px] gap-x-8 py-3 text-sm">
+                      <div className="truncate pr-2">{desc}</div>
+                      <div className="text-center ml-16">{hours}</div>
+                      <div className="text-right">${amount.toFixed(2)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center mt-16">
+              <div className="tracking-widest text-gray-700">TOTAL</div>
+              <div className="text-right">
+                <div className="text-sm tracking-widest text-gray-600">{totalHours.toFixed(0)} hrs</div>
+                <div className="text-xl font-semibold">${totalAmount.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Screen-only form - hidden when printing */}
+      <div className="print:hidden grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1329,7 +1417,7 @@ function InvoiceModal({
           </div>
 
           <div className="border rounded-lg overflow-hidden">
-            <div className="grid grid-cols-[24px_1fr_100px_110px] items-center bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
+            <div className="grid grid-cols-[24px_1fr_100px_110px] gap-x-4 items-center bg-gray-50 px-3 py-2 text-xs font-medium text-gray-600">
               <div></div>
               <div>Description</div>
               <div>Hours</div>
@@ -1341,7 +1429,7 @@ function InvoiceModal({
                 const hours = getHoursFor(s.id, s.durationSeconds)
                 const rowAmount = +(hours * rate).toFixed(2)
                 return (
-                  <div key={s.id} className={`grid grid-cols-[24px_1fr_100px_110px] items-center px-3 py-2 ${checked ? 'bg-blue-50' : ''}`}>
+                  <div key={s.id} className={`grid grid-cols-[24px_1fr_100px_110px] gap-x-4 items-center px-3 py-2 ${checked ? 'bg-blue-50' : ''}`}>
                     <input type="checkbox" className="h-4 w-4" checked={checked} onChange={() => toggleOne(s.id)} />
                     <input
                       className="border border-gray-300 rounded-md p-2 text-sm w-full"
@@ -1382,22 +1470,22 @@ function InvoiceModal({
         </div>
 
         {showPreview && (
-          <div className="bg-white border rounded-xl p-8 overflow-auto shadow-sm">
-            <div className="max-w-[700px] mx-auto text-gray-900">
+          <div className="bg-white border rounded-xl p-8 overflow-auto shadow-sm print:hidden">
+            <div className="w-full text-gray-900">
               <div className="flex justify-end">
                 <h2 className="text-4xl tracking-widest">INVOICE</h2>
               </div>
-              <div className="grid grid-cols-2 gap-8 mt-10 text-sm">
-                <div className="space-y-3">
-                  <div className="flex gap-4"><div className="font-semibold tracking-widest text-gray-600">BILLED TO:</div><div>{billedTo}</div></div>
-                  <div className="flex gap-4"><div className="font-semibold tracking-widest text-gray-600">PAY TO:</div><div>{payTo}</div></div>
-                  <div className="flex gap-4"><div className="font-semibold tracking-widest text-gray-600">DATE:</div><div>{new Date(date).toLocaleDateString()}</div></div>
-                  <div className="flex gap-4"><div className="font-semibold tracking-widest text-gray-600">PAY USING:</div><div><div>{payUsing}</div><div>{payInfo}</div></div></div>
+              <div className="mt-10 text-sm">
+                <div className="space-y-4">
+                  <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">BILLED TO:</div><div className="flex-1">{billedTo}</div></div>
+                  <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">PAY TO:</div><div className="flex-1">{payTo}</div></div>
+                  <div className="flex items-baseline"><div className="font-semibold tracking-widest text-gray-600 w-24">DATE:</div><div className="flex-1">{new Date(date).toLocaleDateString()}</div></div>
+                  <div className="flex items-start"><div className="font-semibold tracking-widest text-gray-600 w-24">PAY USING:</div><div className="flex-1"><div>{payUsing}</div>{payInfo && <div className="text-gray-500 mt-1">• {payInfo}</div>}</div></div>
                 </div>
               </div>
 
               <div className="mt-10">
-                <div className="grid grid-cols-[1fr_120px_140px] text-sm font-semibold tracking-widest text-gray-600">
+                <div className="grid grid-cols-[1fr_120px_140px] gap-x-8 text-sm font-semibold tracking-widest text-gray-600">
                   <div>DESCRIPTION</div>
                   <div>HOURS</div>
                   <div>AMOUNT</div>
@@ -1408,11 +1496,11 @@ function InvoiceModal({
                     const amount = hours * rate
                     const desc = (notesEdits[s.id] ?? s.notes) || 'Item'
                     return (
-                      <div key={s.id} className="grid grid-cols-[1fr_120px_140px] py-3 text-sm">
-                        <div className="truncate pr-4">{desc}</div>
-                        <div className="text-center">{hours}</div>
-                        <div className="text-right">${amount.toFixed(2)}</div>
-                      </div>
+                                             <div key={s.id} className="grid grid-cols-[1fr_120px_140px] gap-x-8 py-3 text-sm">
+                         <div className="truncate pr-2">{desc}</div>
+                         <div className="text-center ml-16">{hours}</div>
+                         <div className="text-right">${amount.toFixed(2)}</div>
+                       </div>
                     )
                   })}
                 </div>
