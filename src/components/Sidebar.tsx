@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 
 type Project = {
@@ -12,9 +12,10 @@ type SidebarProps = {
   projectColors: string[];
   onProjectClick: (projectId: number) => void;
   user: User | null;
+  onSignOut: () => void;
 };
 
-export default function Sidebar({ projects, projectColors, onProjectClick, user }: SidebarProps) {
+export default function Sidebar({ projects, projectColors, onProjectClick, user, onSignOut }: SidebarProps) {
   const runningProjects = projects.filter((p) => p.running);
   const [showProfile, setShowProfile] = useState(false);
 
@@ -23,7 +24,7 @@ export default function Sidebar({ projects, projectColors, onProjectClick, user 
 
   return (
     <>
-      <aside className="fixed left-0 top-0 h-full bg-gray-800 text-white w-16 flex flex-col items-center py-6 gap-4">
+      <aside className="fixed left-0 top-0 h-full bg-gray-800 text-white w-20 flex flex-col items-center py-6 gap-4">
         {/* Profile Section - Clickable */}
         {user && (
           <button
@@ -130,13 +131,10 @@ export default function Sidebar({ projects, projectColors, onProjectClick, user 
                   {subscriptionTier === 'free' ? 'Upgrade to Pro' : 'Manage Subscription'}
                 </button>
                 <button
-                  onClick={() => {
-                    // Add settings logic here
-                    console.log('Open settings');
-                  }}
+                  onClick={onSignOut}
                   className="flex-1 bg-gray-100 text-gray-700 py-2 px-3 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
                 >
-                  Settings
+                  Sign Out
                 </button>
               </div>
             </div>

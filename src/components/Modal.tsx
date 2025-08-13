@@ -5,18 +5,19 @@ type ModalProps = {
   onClose: () => void;
   children: React.ReactNode;
   title: string;
+  maxWidthClass?: string;
 };
 
-export default function Modal({ isOpen, onClose, children, title }: ModalProps) {
+export default function Modal({ isOpen, onClose, children, title, maxWidthClass = 'max-w-md' }: ModalProps) {
   if (!isOpen) return null;
 
   return (
     <div
-      className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50"
+      className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[9999]"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 m-4"
+        className={`bg-white rounded-2xl shadow-xl w-full ${maxWidthClass} p-6 m-4`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
